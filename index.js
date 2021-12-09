@@ -2,9 +2,17 @@ const express = require('express');
 const passport = require('passport');
 const cookieSession = require('cookie-session');
 
+// our database operations
+const dbo = require('./databaseOps');
+
+// Promises-wrapped version of sqlite3
+const db = require('./sqlWrap');
+
+// functions that verify activities before putting them in database
+const act = require('./activity');
+const prof = require('./profile');
+
 const GoogleStrategy = require('passport-google-oauth20');
-
-
 
 // Google login credentials, used when the user contacts
 // Google, to tell them where he is trying to login to, and show
@@ -37,7 +45,8 @@ passport.use(new GoogleStrategy(googleLoginData, gotProfile) );
 
 // app is the object that implements the express server
 const app = express();
-
+// use this instead of the older body-parser
+app.use(express.json());
 // pipeline stage that just echos url, for debugging
 app.use('/', printURL);
 
@@ -98,7 +107,7 @@ app.get('/auth/accepted',
 	function (req, res) {
 	    console.log('Logged in and using cookies!')
       // tell browser to get the hidden main page of the app
-	    res.redirect('/hello.html');
+	    res.redirect('/index.html');
 	});
 
 // static files in /user are only available after login
@@ -117,6 +126,157 @@ app.get('/query', isAuthenticated,
     function (req, res) { 
       console.log("saw query");
       res.send('HTTP query!') });
+
+//logout the user
+app.get('/logout', function(req, res){
+  req.logout();
+  res.redirect('/splash.html');
+});
+
+app.get('/name', isAuthenticated, async function(req, res, next){
+  console.log("user:", req.user);
+  //let results = await dbo.get_name(parseInt(req.user.userid));
+  //console.log("results are",results)
+  res.send(req.user.data);
+})
+
+app.get('/userdata', isAuthenticated, async function(req, res, next){
+  console.log("user:", req.user);
+  //let results = await dbo.get_name(parseInt(req.user.userid));
+  //console.log("results are",results)
+  res.send(req.user.data);
+})
+
+// when there is nothing following the slash in the url, return the main page of the app.
+//app.get("/", isAuthenticated,(request, response) => {
+//  response.sendFile(__dirname + "/public/index.html");
+//});
+
+// This is where the server recieves and responds to get /all requests
+// used for debugging - dumps whole database
+app.get('/all', isAuthenticated, async function(request, response, next) {
+  console.log("Server recieved a get /all request at", request.url);
+  let results = await dbo.get_all()
+  
+  response.send(results);
+});
+
+// This is where the server recieves and responds to store POST requests
+app.post('/store',isAuthenticated, async function(request, response, next) {
+  console.log("Server recieved a post request at", request.url);
+  let activity = act.Activity(request.body)
+  await dbo.post_activity(activity)
+  
+  response.send({ message: "I got your POST request"});
+});
+
+// This is where the server recieves and responds to  reminder GET requests
+app.get('/reminder', isAuthenticated, async function(request, response, next) {
+  console.log("Server recieved a post request at", request.url)
+  let currTime = newUTCTime()
+  currTime = (new Date()).getTime()
+
+  // Get Most Recent Past Planned Activity and Delete All Past Planned Activities
+  let result = await dbo.get_most_recent_planned_activity_in_range(0, currTime, request.user.data.userid)
+  await dbo.delete_past_activities_in_range(0, currTime, request.user.data.userid);
+
+  if (result != null){
+    // Format Activity Object Properly
+    result.scalar = result.amount
+    result.date = result['MAX(date)']
+    // Send Client Most Recent Planned Activity from the Past
+    response.send(act.Activity(result));
+  } else {
+    response.send({message: 'All activities up to date!'});
+  }
+  
+});
+
+
+// This is where the server recieves and responds to week GET requests
+app.get('/week',isAuthenticated , async function(request, response, next) {
+  console.log("Server recieved a post request at", request.url);
+  let date = parseInt(request.query.date)
+  let activity = request.query.activity
+  
+  /* Get Latest Activity in DB if not provided by query params */
+  if (activity === undefined) {
+    let result = await dbo.get_most_recent_entry(request.user.data.userid)
+    try {
+      activity = result.activity
+    } catch(error) {
+      activity = "none"
+    }
+  }
+  
+  /* Get Activity Data for current Date and The Week Prior */
+  let min = date - 6 * MS_IN_DAY
+  let max = date
+  let result = await dbo.get_similar_activities_in_range(activity, request.user.data.userid, min, max)
+
+  /* Store Activity amounts in Buckets, Ascending by Date */
+  let data = Array.from({length: 7}, (_, i) => {
+    return { date: date - i * MS_IN_DAY, value: 0 }
+  })
+
+  /* Fill Data Buckets With Activity Amounts */
+  for(let i = 0 ; i < result.length; i++) {
+    let idx = Math.floor((date - result[i].date)/MS_IN_DAY)
+    data[idx].value += result[i].amount
+  }
+  
+  // Send Client Activity for the Se;ected Week
+  response.send(data.reverse());
+});
+
+// call the async test function for the database
+// this fills the db with test data
+// in your system, you can delete this. 
+/*dbo.testDB().catch(
+  function (error) {
+    console.log("error:",error);}
+);
+*/
+
+// UNORGANIZED HELPER FUNCTIONS
+
+const MS_IN_DAY = 86400000
+
+/**
+ * Convert GMT date to UTC
+ * @returns {Date} current date, but converts GMT date to UTC date
+ */
+ function newUTCTime() {
+    let gmtDate = new Date()
+    let utcDate = (new Date(gmtDate.toLocaleDateString()))
+    let utcTime = Date.UTC(
+        utcDate.getFullYear(),
+        utcDate.getMonth(),
+        utcDate.getDay()
+    )
+    console.log("time:", utcTime)
+    return utcTime
+}
+
+
+
+/**
+ * Convert UTC date to UTC time
+ * @param {Date} date - date to get UTC time of
+ * @returns {number}
+ */
+function date_to_UTC_datetime(date) {
+  let utcDate = new Date(date.toLocaleDateString())
+  return Date.UTC(
+        utcDate.getFullYear(),
+        utcDate.getMonth(),
+        utcDate.getDay()
+    )
+}
+
+
+
+
 
 // finally, file not found, if we cannot handle otherwise.
 app.use( fileNotFound );
@@ -173,8 +333,20 @@ function gotProfile(accessToken, refreshToken, profile, done) {
     // Second arg to "done" will be passed into serializeUser,
     // should be key to get user out of database.
 
-    let userid = profile.id;  
-
+    let userid = parseInt(profile.id); 
+    let first_name = profile.name.givenName;
+    let last_name = profile.name.familyName;
+    user = {"userid":userid, "first_name":first_name, "last_name":last_name};
+    user_prof = prof.Profile(user);
+    let post_user = async(user_prof) => {
+      try{
+        await dbo.post_profile(user_prof);
+      }
+      catch(error){
+        console.error(error)
+      }
+    }
+    post_user(user_prof);
     done(null, userid); 
 }
 
@@ -196,7 +368,22 @@ passport.deserializeUser((userid, done) => {
     // here is a good place to look up user data in database using
     // userid. Put whatever you want into an object. It ends up
     // as the property "user" of the "req" object. 
-    let userData = {userData: "data from user's db row goes here"};
-    done(null, userData);
+    let getData = async(userid) => {
+      try{
+        let data = await dbo.get_user(userid);
+        return data
+      }
+      catch(error) {
+        console.error(error);
+      }
+    }
+    getData(userid)
+    .then(data => {
+      console.log("user is:", data)
+      let userData = {data};
+      done(null, userData);
+    })
+    .catch((error) => {
+      console.error(error)
+    });
 });
-

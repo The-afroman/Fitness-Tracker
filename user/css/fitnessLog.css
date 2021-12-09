@@ -19,11 +19,20 @@ button:hover {
 
 /* || Top Level Section Styes */
 nav {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
   padding: 20px 40px;
   background-color: #333333;
   color: white;
   font-weight: 600;
   font-size: 1.7rem;
+}
+#logout {
+  font-weight: 300;
+  font-size: 1.25rem; 
+  background-color: #333333;
+  color: white;
 }
 
 header {

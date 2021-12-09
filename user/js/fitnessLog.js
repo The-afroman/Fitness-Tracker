@@ -30,6 +30,42 @@ submit_past_activity_button.addEventListener("click", submit_past_activity_oncli
 let submit_future_activity_button = document.getElementById("submitFutureActivityButton")
 submit_future_activity_button.addEventListener("click", submit_future_activity_onclick)
 
+let logout_button = document.getElementById("logout");
+logout_button.addEventListener("click", logout_onclick);
+
+//get username 
+fetch(`/name`, {
+  method: 'GET',
+  headers: {
+    'Content-Type': 'application/json'
+  }
+}).then(response => response.json())
+  .then(data => {
+    console.log("user is:", data)
+    let user = document.getElementById("username");
+    user.textContent = data.first_name
+  })
+  .catch((error) => {
+    console.error(error)
+  });
+
+
+/**
+ * ONCLICK - logout current useradd_past_activity_onclick
+ */
+function logout_onclick() {
+  fetch(`/logout`, {
+    method: 'GET',
+    redirect: 'manual',
+  })
+    .then(response => {
+      window.location = response
+    })
+    .catch((error) => {
+      console.error(error)
+    });
+}
+
 
 /**
  * ONCLICK - Hide 'Add New Activity' Button under the Past Section and Show
@@ -91,59 +127,72 @@ function past_activity_dropdown_onchange() {
  * Form, and Display 'Add ...' Button with confirmation text above
  */
 function submit_past_activity_onclick() {
-  /* Connect to Past Activity Sections */
-  let pActAdd = document.getElementById("pAct-Add");
-  let pActForm = document.getElementById("pAct-Form");
-  
-  /* Activity Data to Send to Server */
-  let data = {
-    date: document.getElementById('pAct-date').value,
-    activity: document.getElementById('pAct-activity').value.toLowerCase(),
-    scalar: parseFloat(document.getElementById('pAct-scalar').value),
-    units: document.getElementById('pAct-unit').value
+  fetch(`/userdata`, {
+  method: 'GET',
+  headers: {
+    'Content-Type': 'application/json'
   }
+}).then(response => response.json())
+  .then(userdata => {
+    let userid = userdata.userid;
+    /* Connect to Past Activity Sections */
+    let pActAdd = document.getElementById("pAct-Add");
+    let pActForm = document.getElementById("pAct-Form");
 
-  if (!past_activity_form_is_valid(data)) {  
-    alert("Invalid Past Activity. Please fill in the entire form.");
-    return
-  }
+    /* Activity Data to Send to Server */
+    let data = {
+      date: document.getElementById('pAct-date').value,
+      activity: document.getElementById('pAct-activity').value.toLowerCase(),
+      scalar: parseFloat(document.getElementById('pAct-scalar').value),
+      units: document.getElementById('pAct-unit').value,
+      userid: userid
+    }
+    console.log(data);
+    if (!past_activity_form_is_valid(data)) {
+      alert("Invalid Past Activity. Please fill in the entire form.");
+      return
+    }
 
-  /* Hide Form, Show 'Add New Activity' Button */
-  pActAdd.classList.remove("hide");
-  pActForm.classList.add("hide");
-  
-  /* Add 'p' tag above 'Add New Activity' Button */
-  let newActivity = create_submission_success_element(   
-    "Got it! ",
-    `${data.activity} for ${data.scalar} ${data.units}. `,
-    "Keep it up!"
-  )
-  insert_latest_response(pActAdd, newActivity)
+    /* Hide Form, Show 'Add New Activity' Button */
+    pActAdd.classList.remove("hide");
+    pActForm.classList.add("hide");
 
-  data.date = removeTimeOfDay(new Date(data.date.replace('-','/'))).getTime()
-  console.log('Past Activity Sending:', data);
+    /* Add 'p' tag above 'Add New Activity' Button */
+    let newActivity = create_submission_success_element(
+      "Got it! ",
+      `${data.activity} for ${data.scalar} ${data.units}. `,
+      "Keep it up!"
+    )
+    insert_latest_response(pActAdd, newActivity)
 
-  /* Post Activity Data to Server */
-  fetch(`/store`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(data), // post body
-  })
-  .then(response => response.json())
-  .then(data => {
-    console.log('Past Activity Success:', data);
+    data.date = removeTimeOfDay(new Date(data.date.replace('-', '/'))).getTime()
+    console.log('Past Activity Sending:', data);
+
+    /* Post Activity Data to Server */
+    fetch(`/store`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(data), // post body
+    })
+      .then(response => response.json())
+      .then(data => {
+        console.log('Past Activity Success:', data);
+      })
+      .catch((error) => {
+        console.error('Past Activity Error:', error);
+      });
+
+    /* Reset Form */
+    document.getElementById('pAct-date').valueAsDate = newUTCDate()
+    document.getElementById('pAct-activity').value = "Walk"
+    document.getElementById('pAct-scalar').value = ""
+    document.getElementById('pAct-unit').value = "km"
   })
   .catch((error) => {
-    console.error('Past Activity Error:', error);
+    console.error(error)
   });
- 
-  /* Reset Form */
-  document.getElementById('pAct-date').valueAsDate = newUTCDate()
-  document.getElementById('pAct-activity').value = "Walk"
-  document.getElementById('pAct-scalar').value = ""
-  document.getElementById('pAct-unit').value = "km"
 }
 
 
@@ -152,56 +201,66 @@ function submit_past_activity_onclick() {
  * Form, and Display 'Add ...' Button with confirmation text above
  */
 function submit_future_activity_onclick() {
-  /* Connect to Future Activity Sections */
-  let fActAdd = document.getElementById("fAct-Add");
-  let fActForm = document.getElementById("fAct-Form");
-  
-  /* Activity Data to Send to Server */
-  let data = {
-    date: document.getElementById('fAct-date').value,
-    activity: document.getElementById('fAct-activity').value.toLowerCase()
-  }
-  
-  /* Form Validation */
-  if (!future_activity_form_is_valid(data)) {  
-    alert("Invalid Future Plan. Please fill in the entire form.");
-    return
-  }
-
-  /* Hide Form, Show 'Add New Activity' Button */
-  fActAdd.classList.remove("hide");
-  fActForm.classList.add("hide");
-
-  /* Add 'p' tag above 'Add New Activity' Button  */
-  let newActivity = create_submission_success_element(
-    "Sounds good! Don't forget to come back to update your session for ",
-    `${data.activity} on ${reformat_date(data.date)}`,
-    "!"
-  )
-  insert_latest_response(fActAdd, newActivity)
-
-  data.date = removeTimeOfDay(new Date(data.date.replace('-','/'))).getTime()
-  console.log('Future Plans Sending:', data);
-
-  /* Post Activity Data to Server */
-  fetch(`/store`, {
-    method: 'POST',
-    headers: {
+  fetch(`/userdata`, {
+  method: 'GET',
+  headers: {
       'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(data), // post body
-  })
-  .then(response => response.json())
-  .then(data => {
-    console.log('Future Plans Success:', data);
-  })
-  .catch((error) => {
-    console.error('Future Plans Error:', error);
-  });
+    }
+  }).then(response => response.json())
+    .then(userdata => {
+    let userid = userdata.userid;
+    /* Connect to Future Activity Sections */
+    let fActAdd = document.getElementById("fAct-Add");
+    let fActForm = document.getElementById("fAct-Form");
 
-  /* Reset Form */
-  document.getElementById('fAct-date').valueAsDate = newUTCDate()
-  document.getElementById('fAct-activity').value = "Walk"
+    /* Activity Data to Send to Server */
+    let data = {
+      date: document.getElementById('fAct-date').value,
+      activity: document.getElementById('fAct-activity').value.toLowerCase(),
+      userid: userid
+    }
+
+    /* Form Validation */
+    if (!future_activity_form_is_valid(data)) {
+      alert("Invalid Future Plan. Please fill in the entire form.");
+      return
+    }
+
+    /* Hide Form, Show 'Add New Activity' Button */
+    fActAdd.classList.remove("hide");
+    fActForm.classList.add("hide");
+
+    /* Add 'p' tag above 'Add New Activity' Button  */
+    let newActivity = create_submission_success_element(
+      "Sounds good! Don't forget to come back to update your session for ",
+      `${data.activity} on ${reformat_date(data.date)}`,
+      "!"
+    )
+    insert_latest_response(fActAdd, newActivity)
+
+    data.date = removeTimeOfDay(new Date(data.date.replace('-', '/'))).getTime()
+    console.log('Future Plans Sending:', data);
+
+    /* Post Activity Data to Server */
+    fetch(`/store`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(data), // post body
+    })
+      .then(response => response.json())
+      .then(data => {
+        console.log('Future Plans Success:', data);
+      })
+      .catch((error) => {
+        console.error('Future Plans Error:', error);
+      });
+
+    /* Reset Form */
+    document.getElementById('fAct-date').valueAsDate = newUTCDate()
+    document.getElementById('fAct-activity').value = "Walk"
+  });
 }
 
 
@@ -218,18 +277,18 @@ function create_submission_success_element(beg, mid, end) {
   let baseText = document.createElement('span')
   let dynamicText = document.createElement('strong')
   let exclamationText = document.createElement('span')
-  
+
   /* Update textContent of all generated DOM elements */
   baseText.textContent = beg
   dynamicText.textContent = mid
   exclamationText.textContent = end
-  
+
   /* Append all text contents back to back in wrapper 'p' tag */
   newMessage.appendChild(baseText)
   newMessage.appendChild(dynamicText)
   newMessage.appendChild(exclamationText)
 
-  return newMessage  
+  return newMessage
 }
 
 
@@ -243,15 +302,15 @@ function create_submission_success_element(beg, mid, end) {
  * @returns {boolean} Boolean represents if data is valid
  */
 function past_activity_form_is_valid(data) {
-  let date = new Date(data.date.replace('-','/'))
-  if ( date != "Invalid Date" && date > newUTCDate()) {
+  let date = new Date(data.date.replace('-', '/'))
+  if (date != "Invalid Date" && date > newUTCDate()) {
     return false
   }
   if (isNaN(data.scalar) || data.scalar <= 0) {
     return false
   }
 
-  return !(data.date == "" || data.activity == "" || data.units == "" )
+  return !(data.date == "" || data.activity == "" || data.units == "")
 }
 
 
@@ -263,8 +322,8 @@ function past_activity_form_is_valid(data) {
  * @returns {boolean} Boolean represents if data is valid
  */
 function future_activity_form_is_valid(data) {
-  let date = new Date(data.date.replace('-','/'))
-  if ( date != "Invalid Date" && date < newUTCDate()) {
+  let date = new Date(data.date.replace('-', '/'))
+  if (date != "Invalid Date" && date < newUTCDate()) {
     return false
   }
 
@@ -278,7 +337,7 @@ function future_activity_form_is_valid(data) {
  * @param {HTMLElement} child - DOM element
  */
 function insert_latest_response(parent, child) {
-  if(parent.children.length > 1) {
+  if (parent.children.length > 1) {
     parent.removeChild(parent.children[0])
   }
   parent.insertBefore(child, parent.childNodes[0])
@@ -292,7 +351,7 @@ function insert_latest_response(parent, child) {
  */
 function reformat_date(date) {
   let [yyyy, mm, dd] = date.split("-");
-  return `${mm}/${dd}/${yyyy.substring(2,4)}`
+  return `${mm}/${dd}/${yyyy.substring(2, 4)}`
 }
 
 
@@ -324,8 +383,8 @@ function removeTimeOfDay(gmtDate) {
 function date_to_UTC_datetime(date) {
   let utcDate = new Date(date.toLocaleDateString())
   return Date.UTC(
-        utcDate.getFullYear(),
-        utcDate.getMonth(),
-        utcDate.getDay()
-    )
+    utcDate.getFullYear(),
+    utcDate.getMonth(),
+    utcDate.getDay()
+  )
 }
